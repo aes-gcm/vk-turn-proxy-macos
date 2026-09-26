@@ -51,6 +51,15 @@ Imported from the existing local `vkturn-macos` project on 2026-09-26. Before im
 
 An independently installed application named `vk-turn-proxy.app` has a different bundle identifier and is not part of this import. Existing build artifacts, DMGs and user runtime data are excluded from Git. No end-to-end network connection test was performed as part of the source import.
 
+## Acknowledgements
+
+Thank you to the authors and contributors of these projects, whose work helped make this macOS application possible:
+
+- [cacggghp/vk-turn-proxy](https://github.com/cacggghp/vk-turn-proxy)
+- [anton48/vk-turn-proxy-ios](https://github.com/anton48/vk-turn-proxy-ios)
+
+Both repositories helped with the development of VK Turn Proxy for macOS. Thank you for sharing your work with the community!
+
 ## License and upstream
 
 The underlying project identifies itself as a GPL-3.0 derivative of [cacggghp/vk-turn-proxy](https://github.com/cacggghp/vk-turn-proxy), with iOS work documented in [anton48/vk-turn-proxy-ios](https://github.com/anton48/vk-turn-proxy-ios). Existing notices, the [GPL license](LICENSE), source headers and dependency licenses are retained. See [core/README.md](core/README.md) for inherited attribution and licensing details.
