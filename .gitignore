@@ -1,0 +1,28 @@
+# Generated macOS app, helper and distributable images
+/app/build/
+/bin/
+/dist/
+*.dmg
+*.app/
+.DS_Store
+
+# Local runtime data, credentials and signing material
+.private/
+.private-notes/
+.env
+.env.*
+!.env.example
+AppStoreConnect.env
+*.p8
+*.p12
+*.mobileprovision
+*.key
+*.pem
+*.log
+*.pcap
+*.pcapng
+vk-turn-wg*.conf
+
+# Per-user IDE state
+xcuserdata/
+DerivedData/
