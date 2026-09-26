@@ -27,8 +27,7 @@ private struct HelperConfig: Codable {
 @MainActor
 final class Connection {
     /// Space-free path so the sudoers command spec parses cleanly.
-    private let installedHelper = "/usr/local/bin/vkturn-helper"
-    private let sudoersPath = "/etc/sudoers.d/vkturn"
+    private let installedHelper = InstallerCommands.helperPath
 
     private var logTimer: Timer?
     private var logOffset: UInt64 = 0
@@ -38,6 +37,7 @@ final class Connection {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("VKTurnProxy", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         return dir
     }
     private var configURL: URL { supportDir.appendingPathComponent("config.json") }
@@ -74,6 +74,7 @@ final class Connection {
             model.status = .error("не удалось записать конфиг: \(error.localizedDescription)"); return
         }
         try? "".write(to: logURL, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logURL.path)
         logOffset = 0
         cancelled = false
         model.status = .connecting
@@ -90,7 +91,7 @@ final class Connection {
             let current = FileManager.default.contentsEqual(atPath: helper, andPath: bundledPath)
             if !current || !Self.probeInstalled(helper) {
                 DispatchQueue.main.async { model.log("[app] первичная установка службы (нужен пароль один раз)…") }
-                let ok = Self.install(bundled: bundledPath, dest: helper, sudoers: "/etc/sudoers.d/vkturn")
+                let ok = Self.install(bundled: bundledPath)
                 if !ok {
                     DispatchQueue.main.async {
                         if !self.cancelled { model.status = .error("установка отменена/не удалась") }
@@ -99,12 +100,12 @@ final class Connection {
                 }
                 DispatchQueue.main.async { model.log("[app] служба установлена ✓ (пароль больше не нужен)") }
             }
-            if self.cancelled { return }
-            // 2) launch as root without a prompt; helper writes its own pidfile
-            let cmd = "sudo -n '\(helper)' -config '\(cfgPath)' > '\(logPath)' 2>&1 &"
-            _ = Self.runSh(cmd)
             DispatchQueue.main.async {
-                if !self.cancelled { self.startLogTail(model: model) }
+                guard !self.cancelled else { return }
+                // Check cancellation and launch on the actor that owns state.
+                let cmd = "/usr/bin/sudo -n \(InstallerCommands.shellQuote(helper)) -config \(InstallerCommands.shellQuote(cfgPath)) > \(InstallerCommands.shellQuote(logPath)) 2>&1 &"
+                _ = Self.runSh(cmd)
+                self.startLogTail(model: model)
             }
         }
     }
@@ -119,7 +120,7 @@ final class Connection {
         model.log(note)
         let helper = installedHelper
         DispatchQueue.global().async {
-            _ = Self.runSh("sudo -n '\(helper)' -stop")
+            _ = Self.runSh("/usr/bin/sudo -n \(InstallerCommands.shellQuote(helper)) -stop")
             DispatchQueue.main.async { model.status = .idle; model.log("[app] отключено") }
         }
     }
@@ -128,7 +129,7 @@ final class Connection {
     private func startLogTail(model: AppModel) {
         logTimer?.invalidate()
         logTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-            self?.pumpLog(model: model)
+            Task { @MainActor in self?.pumpLog(model: model) }
         }
     }
 
@@ -180,25 +181,16 @@ final class Connection {
 
     /// One-time privileged install: copy the helper to a fixed path and add a
     /// NOPASSWD sudoers rule for the current user. Returns false if cancelled.
-    nonisolated private static func install(bundled: String, dest: String, sudoers: String) -> Bool {
-        let user = NSUserName()
-        let script = [
-            "mkdir -p /usr/local/bin",
-            "cp '\(bundled)' '\(dest)'",
-            "chown root:wheel '\(dest)'",
-            "chmod 755 '\(dest)'",
-            "printf '%s\\n' '\(user) ALL=(root) NOPASSWD: \(dest)' > '\(sudoers)'",
-            "chown root:wheel '\(sudoers)'",
-            "chmod 440 '\(sudoers)'",
-        ].joined(separator: "; ")
-        let apple = "do shell script \"\(script)\" with administrator privileges"
+    nonisolated private static func install(bundled: String) -> Bool {
+        let script = InstallerCommands.installScript(bundled: bundled, userID: getuid())
+        let apple = InstallerCommands.appleScript(script)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", apple]
         p.standardOutput = Pipe(); p.standardError = Pipe()
         do { try p.run() } catch { return false }
         p.waitUntilExit()
-        return p.terminationStatus == 0
+        return p.terminationStatus == 0 && probeInstalled(InstallerCommands.helperPath)
     }
 
     @discardableResult
